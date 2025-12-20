@@ -1,0 +1,18 @@
+# virtual environments
+.venv/
+venv/
+env/
+
+# python cache
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# raw html / large raw data
+data_raw/
+
+# OS junk
+.DS_Store
+Thumbs.db
