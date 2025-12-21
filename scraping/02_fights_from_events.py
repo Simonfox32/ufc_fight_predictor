@@ -82,6 +82,7 @@ def parse_events_fights(soup: BeautifulSoup) -> list[dict]:
                 "end_time_mmss": end_time_mmss,
                 "outcome_marker_raw": outcome_marker,
                 "fight_url": fight_url,
+                "fight_id":id_from_url(fight_url),
                 "fighter_1_link": fighter_1_link,
                 "fighter_2_link": fighter_2_link,
                 "fight_id" : id_from_url(fight_url),
