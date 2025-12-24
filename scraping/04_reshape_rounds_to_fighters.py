@@ -10,6 +10,7 @@ OUT_PATH = ROOT / "data_raw" / "extracts" / "rounds" / "round_stats_long.csv"
 def return_fight_data(df):
     long_rows = []
 
+    i = 0
     for row in df.itertuples(index=False):
         fighter1_row = {
             "event_id": row.event_id,
@@ -72,6 +73,9 @@ def return_fight_data(df):
             "win_id": row.win_id
     }
         long_rows.append(fighter2_row)
+        if i % 25 == 0:
+            print(f"{i} rounds processed")
+        i = i + 1
     return long_rows
 
 def main() :

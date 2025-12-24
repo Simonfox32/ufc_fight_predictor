@@ -216,12 +216,15 @@ def main() :
     FIGHTS_HTML_DIR.mkdir(parents=True, exist_ok=True)
     # Reads script output, resumes if script has already been run
     done_ids = load_done_fight_ids(OUT_CSV_PATH)
-    
+    i = 0
     # Iterates through every fight and parses fight data
     for row in df_fights.itertuples(index=False):
         
         fight_id = id_from_url(row.fight_url)
         
+        if i % 25 == 0:
+            print(f"{i}/{len(df_fights)} fights processed")
+        i = i + 1
         # Checks to see if fight has already been parsed, it hasn't it gets parsed
         if fight_id in done_ids:
             continue
@@ -244,6 +247,7 @@ def main() :
         for row in fight:
             row.update(meta)
         
+
         # Adds fight to CSV
         append_rows_to_csv(OUT_CSV_PATH, fight)
         done_ids.add(fight_id)

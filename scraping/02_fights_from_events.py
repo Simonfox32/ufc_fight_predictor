@@ -4,12 +4,38 @@ from pathlib import Path
 import time
 import requests
 import re
+from typing import List, Dict, Any
+import csv
 
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS_HTML_DIR = ROOT / "data_raw"/ "html" / "events_pages"
 EVENTS_CSV_PATH = ROOT / "data_raw" / "extracts" / "events_master_list" / "all_events.csv"
 OUT_CSV_PATH = ROOT / "data_raw" / "extracts" / "all_fights" / "all_fights.csv"
+
+def append_rows_to_csv(csv_path: Path, rows: List[Dict[str, any]]):
+    if not rows:
+        return
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = csv_path.exists()
+    fieldnames = list(rows[0].keys())
+    with csv_path.open("a", newline="", encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerows(rows)
+        
+
+def load_done_fight_ids(csv_path: Path) -> set[str] :
+    if not csv_path.exists():
+        return set()
+    done = set()
+    with csv_path.open('r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            done.add(row['fight_id'])
+    return done
+
 
 # Function that parses through an event, then adds all the fights of an event to an array
 def parse_events_fights(soup: BeautifulSoup) -> list[dict]:
@@ -85,7 +111,6 @@ def parse_events_fights(soup: BeautifulSoup) -> list[dict]:
                 "fight_id":id_from_url(fight_url),
                 "fighter_1_link": fighter_1_link,
                 "fighter_2_link": fighter_2_link,
-                "fight_id" : id_from_url(fight_url),
                 "fighter_1_id": id_from_url(fighter_1_link),
                 "fighter_2_id": id_from_url(fighter_2_link),
                 "row_text_raw": row_texts
@@ -111,18 +136,22 @@ def main():
     # Event CSV is read
     df_events = pd.read_csv(EVENTS_CSV_PATH)
     all_fights = []
+    done_fight_ids = load_done_fight_ids(OUT_CSV_PATH)
     i = 0
     #Every row in df is iterated through
-    for row in df_events.itertuples(index=False):
+    for i, row in enumerate(df_events.itertuples(index=False)):
+        
         # Event information is saved
         event_name = row.event_name
         event_date = row.event_date
         event_url = row.event_url
         event_location = row.event_location
-        EVENTS_HTML_DIR.parent.mkdir(parents=True, exist_ok=True)
+        event_id = id_from_url(event_url)
+        
+        
+        EVENTS_HTML_DIR.mkdir(parents=True, exist_ok=True)
         # Events are given their own number to identify them
-        Event_html_path = EVENTS_HTML_DIR / f"event_{i:04d}.html"
-        i = i + 1
+        Event_html_path = EVENTS_HTML_DIR / f"event_{event_id}.html"
         
         # Checks to see if an event already exists (redundancy)
         if Event_html_path.exists():
@@ -143,18 +172,19 @@ def main():
             f['event_date'] = event_date
             f['event_location'] = event_location
             f['event_url'] = event_url
-            f['event_id'] = id_from_url(event_url)
+            f['event_id'] = event_id
         
+        fights = [f for f in fights if f["fight_id"] not in done_fight_ids]
         # Creates a master list of every fight
-        all_fights.extend(fights)
+        append_rows_to_csv(OUT_CSV_PATH, fights)
+        done_fight_ids.update(f["fight_id"] for f in fights)
+
+        
+        if i % 25 == 0:
+            print(f"{i}/{len(df_events)} events processed")
+
     
-    # Turns every fight into a dataframe
-    df_fights = pd.DataFrame(all_fights).drop_duplicates(subset=['fight_url']).reset_index(drop=True)
-    
-    # Turns the dataframe into a csv
-    OUT_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df_fights.to_csv(OUT_CSV_PATH, index=False)
-    print(df_fights.head())
+
     
 
 if __name__ == "__main__":
