@@ -39,7 +39,9 @@ def return_fight_data(df):
             "rev": row.rev_2,
             "ctrl_sec": row.ctrl_sec_2,
 
-            "win_id": row.win_id
+            "win_id": row.win_id,
+            "end_round": row.end_round,
+            "end_time_mmss": row.end_time_mmss
     }
         long_rows.append(fighter1_row)
 
@@ -70,7 +72,9 @@ def return_fight_data(df):
             "rev": row.rev_2,
             "ctrl_sec": row.ctrl_sec_2,
 
-            "win_id": row.win_id
+            "win_id": row.win_id,
+            "end_round": row.end_round,
+            "end_time_mmss": row.end_time_mmss
     }
         long_rows.append(fighter2_row)
         if i % 25 == 0:

@@ -36,6 +36,21 @@ def load_done_fight_ids(csv_path: Path) -> set[str] :
             done.add(row['fight_id'])
     return done
 
+def parse_end_round_and_time(row_text: str):
+    if not row_text or "|" not in row_text:
+        return None, None
+
+    parts = [p.strip() for p in row_text.split("|")]
+
+    if len(parts) < 2:
+        return None, None
+
+    end_round_raw = parts[-2]
+    end_time_mmss = parts[-1]
+
+    end_round = int(end_round_raw) if end_round_raw.isdigit() else None
+
+    return end_round, end_time_mmss
 
 # Function that parses through an event, then adds all the fights of an event to an array
 def parse_events_fights(soup: BeautifulSoup) -> list[dict]:
@@ -68,10 +83,8 @@ def parse_events_fights(soup: BeautifulSoup) -> list[dict]:
         
         # Saves outcome of the fight. Useful for knowing if a fight was win, NC, or draw
         outcome_marker = cells[0].lower() if len(cells) > 0 and cells[0] else None
-        
+        end_round, end_time_mmss = parse_end_round_and_time(row_texts)
         # End round and end time will be filled in later when fight details is parsed 
-        end_round = None
-        end_time_mmss = None
         weight_class = None
         
         known_weights = [

@@ -90,6 +90,26 @@ def safe_pct(landed: int, attempted: int):
         return landed/attempted
     except Exception:
         return 0.0
+    
+def parse_details_kv(soup: BeautifulSoup) -> dict:
+    details = {}
+
+    # UFCStats puts metadata in these "text-item" blocks
+    for item in soup.select("i.b-fight-details__text-item"):
+        full = item.get_text(" ", strip=True)
+        if ":" not in full:
+            continue
+
+        k, _ = full.split(":", 1)
+        k = k.strip().lower()
+
+        # Prefer the nested span value (UFCStats often wraps the value in <span>)
+        span = item.find("span")
+        v = span.get_text(" ", strip=True) if span else full.split(":", 1)[1].strip()
+
+        details[k] = v
+
+    return details
 
 # Returns all round data of a specific fight 
 def get_table_info(soup: BeautifulSoup):
@@ -100,6 +120,9 @@ def get_table_info(soup: BeautifulSoup):
         return []
     round_table = tables[1]
     rows = round_table.select("tbody tr")
+    details = parse_details_kv(soup)
+    end_round = details.get('round')
+    end_time = details.get('time')
     # Iterates through the round to find relevant fight statistics
     for roundIndex, tr in enumerate(rows, start=1):
         
@@ -171,11 +194,12 @@ def get_table_info(soup: BeautifulSoup):
             
             "rev_1": int(reversal_1) if reversal_1.isdigit() else 0,
             "rev_2": int(reversal_2) if reversal_2.isdigit() else 0,
-            
+                
             "ctrl_sec_1": ctrl_1,
             "ctrl_sec_2": ctrl_2,
             "win_id": win_id,
-            
+            "end_round": end_round,
+            "end_time_mmss": end_time,
             "fighter_1_id": f1_id,
             "fighter_2_id": f2_id
         })
