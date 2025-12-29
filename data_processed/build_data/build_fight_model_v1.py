@@ -2,15 +2,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
-ALL_FIGHTS = ROOT / 'data_processed' / 'all_fights.csv'
-FIGHT_AGG = ROOT / 'data_processed' / 'fight_agg.csv'
-ALL_FIGHTERS = ROOT / 'data_processed' / 'fighters_stats.csv'
+FIGHT_AGG = ROOT / 'data_processed' / 'pre_processed_data' / 'fight_agg.csv'
+ALL_FIGHTERS = ROOT / 'data_processed' / 'pre_processed_data' / 'fighters_stats.csv'
 
-OUT_DIR = ROOT / 'data_processed'
+OUT_DIR = ROOT / 'data_processed' / 'model_data'
 OUT_DIR.parent.mkdir(parents=True, exist_ok=True)
-OUT_PATH = ROOT / 'data_processed' / 'fight_model_v1.csv'
+OUT_PATH = OUT_DIR / 'fight_model_v1.csv'
 
 def mmss_to_seconds(s : str) -> int:
     if pd.isna(s):
@@ -24,14 +23,14 @@ def mmss_to_seconds(s : str) -> int:
     except ValueError:
         return np.nan
     
+def get_age_at_fight(dob, fight_date):
+    return (fight_date - dob).days / 365.25
 
 def main():
     fight_agg_df = pd.read_csv(FIGHT_AGG)
     fighters_df = pd.read_csv(ALL_FIGHTERS)
-    all_fight_df = pd.read_csv(ALL_FIGHTS)
     
     fight_agg_df['event_date'] = pd.to_datetime(fight_agg_df['event_date'])
-    all_fight_df['event_date'] = pd.to_datetime(all_fight_df['event_date'])
     fighters_df['dob'] = pd.to_datetime(fighters_df["dob"], errors="coerce")
     
     fight_agg_df['end_time_sec'] = fight_agg_df['end_time_mmss'].apply(mmss_to_seconds)
@@ -74,6 +73,7 @@ def main():
         .reset_index(level=0, drop=True)
     )
     
+    fight_agg_df = fight_agg_df.merge(fighters_df, on='fighter_id', how='left')
     groups = fight_agg_df.groupby("fight_id")
 
     rows = []
@@ -83,6 +83,7 @@ def main():
         
         rows.append({
             'fight_id': fight_id,
+            "event_date": red["event_date"],
             'red_win': int(red['is_win']),
 
             'red_fighter_id': red['fighter_id'],
@@ -91,6 +92,10 @@ def main():
             'red_sig_acc_l5': red['sig_acc_l5'],
             'red_td_acc_l5': red['td_acc_l5'],
             'red_ctrl_per_min_l5': red['ctrl_per_min_l5'],
+            'red_age_years': get_age_at_fight(red['dob'], red['event_date']),
+            'red_weight_lbs': red['weight_lbs'],
+            'red_height_in': red['height_in'],
+            'red_reach_in': red['reach_in'],
             
             
             'blue_fighter_id': blue['fighter_id'],
@@ -98,12 +103,43 @@ def main():
             'blue_sig_landed_per_min_l5': blue['sig_landed_per_min_l5'],
             'blue_sig_acc_l5': blue['sig_acc_l5'],
             'blue_td_acc_l5': blue['td_acc_l5'],
-            'blue_ctrl_per_min_l5': blue['ctrl_per_min_l5']
-            
+            'blue_ctrl_per_min_l5': blue['ctrl_per_min_l5'],
+            'blue_age_years': get_age_at_fight(blue['dob'], blue['event_date']),
+            'blue_weight_lbs': blue['weight_lbs'],
+            'blue_height_in': blue['height_in'],
+            'blue_reach_in': blue['reach_in']
             
         })
     model_df = pd.DataFrame(rows)
-    print("Model rows:", len(model_df))
-    print(model_df.head(3))
+    model_df['diff_prior_fights'] = (
+        model_df['red_prior_fights'] - model_df['blue_prior_fights']
+    )
+    model_df['diff_sig_landed_per_min_l5'] = (
+        model_df['red_sig_landed_per_min_l5'] - model_df['blue_sig_landed_per_min_l5']
+    )
+    model_df['diff_sig_acc_l5'] = (
+        model_df['red_sig_acc_l5'] - model_df['blue_sig_acc_l5']
+    )
+    model_df['diff_td_acc_l5'] = (
+        model_df['red_td_acc_l5'] - model_df['blue_td_acc_l5']
+    )
+    model_df['diff_ctrl_per_min_l5'] = (
+        model_df['red_ctrl_per_min_l5'] - model_df['blue_ctrl_per_min_l5']
+    )
+    model_df['diff_age_years'] = (
+        model_df['red_age_years'] - model_df['blue_age_years']
+    )
+    model_df['diff_weight_lbs'] = (
+        model_df['red_weight_lbs'] - model_df['blue_weight_lbs']
+    )
+    model_df['diff_height_in'] = (
+        model_df['red_height_in'] - model_df['blue_height_in']
+    )
+    model_df['diff_reach_in'] = (
+        model_df['red_reach_in'] - model_df['blue_reach_in']
+    )
+    
+    OUT_PATH.parent.mkdir(exist_ok=True, parents=True)
+    model_df.to_csv(OUT_PATH, index=False)
 if __name__ == '__main__' :
     main()
