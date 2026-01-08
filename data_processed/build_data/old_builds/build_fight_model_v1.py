@@ -2,7 +2,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 
 FIGHT_AGG = ROOT / 'data_processed' / 'pre_processed_data' / 'fight_agg.csv'
 ALL_FIGHTERS = ROOT / 'data_processed' / 'pre_processed_data' / 'fighters_stats.csv'
@@ -46,6 +46,15 @@ def main():
     fight_agg_df = fight_agg_df.sort_values(['fighter_id','event_date', 'fight_id'])
     fight_agg_df['prior_fights'] = fight_agg_df.groupby('fighter_id').cumcount()
     
+    wc_dummies = pd.get_dummies(
+    fight_agg_df["weight_class"],
+    prefix="wc")
+    
+    
+    wc_dummies = wc_dummies.sort_index(axis=1)
+
+
+    
     def l5_mean_prior(series : pd.Series) -> pd.Series:
         return series.shift(1).rolling(5, min_periods= 1).mean()
     
@@ -78,6 +87,7 @@ def main():
 
     rows = []
     for fight_id, g in groups:
+        g = g.sort_values("fighter_id")
         red = g.iloc[0]
         blue = g.iloc[1]
         
@@ -111,6 +121,7 @@ def main():
             
         })
     model_df = pd.DataFrame(rows)
+    
     model_df['diff_prior_fights'] = (
         model_df['red_prior_fights'] - model_df['blue_prior_fights']
     )

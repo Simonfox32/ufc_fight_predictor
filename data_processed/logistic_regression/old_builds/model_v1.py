@@ -7,8 +7,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, log_loss, classification_report
 
-ROOT = Path(__file__).resolve().parents[1]
-MODEL_PATH = ROOT / 'data_processed' / 'model_data' / 'fight_model_v2a.csv'
+ROOT = Path(__file__).resolve().parents[3]
+MODEL_PATH = ROOT / 'data_processed' / 'model_data' / 'fight_model_v1.csv'
 
 model_df = pd.read_csv(MODEL_PATH)
 TARGET = 'red_win'
@@ -37,13 +37,9 @@ FEATURE_COLS = [
     "diff_age_years",
     "diff_height_in",
     "diff_reach_in",
-    
-    'red_southpaw',
-    'blue_southpaw',
-    'is_opposite_stance',
 ]
 
-model_df.sort_values('event_date')
+model_df = model_df.sort_values('event_date')
 cutoff_date = pd.Timestamp('01-01-2022')
 
 train_df = model_df[model_df['event_date'] <= cutoff_date]

@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 
 FIGHT_AGG = ROOT / 'data_processed' / 'pre_processed_data' / 'fight_agg.csv'
 FIGHT_MODEL = ROOT / 'data_processed' / 'model_data' / 'fight_model_v2a.csv'

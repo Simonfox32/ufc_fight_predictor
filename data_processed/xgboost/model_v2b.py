@@ -1,17 +1,26 @@
-from pathlib import Path
 import pandas as pd
 import numpy as np
+from pathlib import Path
+from datetime import datetime
+import joblib 
+from sklearn.metrics import accuracy_score, log_loss
+from xgboost import XGBClassifier 
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score, log_loss, classification_report
+ROOT = Path(__file__).resolve().parents[2]
 
-ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / 'data_processed' / 'model_data' / 'fight_model_v2b.csv'
+
+df = pd.read_csv(MODEL_PATH)
+df['event_date'] = pd.to_datetime(df['event_date'])
+y = df["red_win"].astype(int)
+
 
 model_df = pd.read_csv(MODEL_PATH)
 TARGET = 'red_win'
+
+
+
+
 model_df["event_date"] = pd.to_datetime(model_df["event_date"], errors="coerce")
 FEATURE_COLS = [
     # experience
@@ -48,7 +57,7 @@ FEATURE_COLS = [
     'is_opposite_stance',
 ]
 
-model_df.sort_values('event_date')
+model_df = model_df.sort_values('event_date')
 cutoff_date = pd.Timestamp('01-01-2022')
 
 train_df = model_df[model_df['event_date'] <= cutoff_date]
@@ -60,35 +69,58 @@ y_train = train_df[TARGET].copy()
 X_test = test_df[FEATURE_COLS].copy()
 y_test = test_df[TARGET].copy()
 
+X_train = X_train.apply(pd.to_numeric, errors="coerce")
+X_test  = X_test.apply(pd.to_numeric, errors="coerce")
+
 train_means = X_train.mean(numeric_only=True)
 
 X_train = X_train.fillna(train_means)
 X_test = X_test.fillna(train_means)
 
-pipe =  Pipeline([
-    ('Scaler', StandardScaler()),
-    ('lr', LogisticRegression(solver='lbfgs', max_iter= 1000))
-])
+model = XGBClassifier(
+    objective="binary:logistic",
+    eval_metric="logloss",
 
-pipe.fit(X_train, y_train)
+    max_depth=4,          # interaction depth
+    learning_rate=0.05,   # conservative
+    n_estimators=500,     # enough trees to learn structure
 
-train_pred = pipe.predict(X_train)
-test_pred = pipe.predict(X_test)
+    subsample=0.8,
+    colsample_bytree=0.8,
 
-train_proba = pipe.predict_proba(X_train)[:, 1]
-test_proba = pipe.predict_proba(X_test)[:, 1]
+    random_state=42,
+    n_jobs=-1
+)
 
-print(accuracy_score(y_train, train_pred))
-print(accuracy_score(y_test, test_pred))
-print(log_loss(y_test, test_proba))
-print(classification_report(y_test, test_pred, digits=3))
+model.fit(X_train, y_train)
 
-coefs = pipe.named_steps["lr"].coef_[0]
+MODELS_DIR = ROOT / 'models'
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+MODEL_OUT = MODELS_DIR / f"ufc_xgb_pipeline_{timestamp}.joblib"
 
-coef_df = pd.DataFrame({
-    "features": FEATURE_COLS,
-    "coefs": coefs,
-    "abs_coef": np.abs(coefs)
-}).sort_values('abs_coef', ascending=False)
+bundle = {
+    "model": model,
+    'feature_cols': FEATURE_COLS,
+    'cutoff_date': str(cutoff_date.date()),
+    'train_rows': int(len(train_df)),
+    'test_rows': int(len(test_df))
+}
 
-print(coef_df)
+joblib.dump(bundle, MODEL_OUT)
+
+
+proba = model.predict_proba(X_test)[:, 1]
+pred  = (proba >= 0.5).astype(int)
+
+acc = accuracy_score(y_test, pred)
+ll  = log_loss(y_test, proba)
+
+
+
+importance = pd.Series(
+    model.feature_importances_,
+    index=X_train.columns
+).sort_values(ascending=False)
+
+print(acc)
