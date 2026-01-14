@@ -13,6 +13,17 @@ __pycache__/
 # raw html / large raw data
 data_raw/
 
+# trained models (large binary files)
+models/*.joblib
+
+# large processed data files
+data_processed/model_data/*.csv
+
+# IDE
+.vscode/
+.idea/
+
 # OS junk
 .DS_Store
 Thumbs.db
+nul
