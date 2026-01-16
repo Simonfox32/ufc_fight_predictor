@@ -144,7 +144,7 @@ l5_cols = ['red_sig_landed_per_min_l5',
            'blue_ctrl_per_min_l5'
            ]
 if l5_cols:
-    # pick a few key L5 cols you expect to exist; if not, we'll adapt next step
+    
     candidate = [c for c in l5_cols if ("sig" in c and "per_min" in c) or ("control" in c and "per_min" in c) or ("td" in c and "acc" in c)]
     candidate = candidate[:6]  # keep it readable
     
@@ -222,12 +222,38 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 
 FEATURE_COLS = [
+    # experience
+    "red_prior_fights", "blue_prior_fights",
+
+    # performance (L5)
+    "red_sig_landed_per_min_l5", "blue_sig_landed_per_min_l5",
+    "red_sig_acc_l5", "blue_sig_acc_l5",
+    "red_td_acc_l5", "blue_td_acc_l5",
+    "red_ctrl_per_min_l5", "blue_ctrl_per_min_l5",
+    "red_kd_per_min_l5", "blue_kd_per_min_l5",
+    "red_non_sig_landed_per_min_l5", "blue_non_sig_landed_per_min_l5",
+
+    # static traits
+    "red_age_years", "blue_age_years",
+    "red_height_in", "blue_height_in",
+    "red_reach_in", "blue_reach_in",
+
+    # differences
+    "diff_prior_fights",
     "diff_sig_landed_per_min_l5",
     "diff_sig_acc_l5",
+    "diff_td_acc_l5",
     "diff_ctrl_per_min_l5",
-    "diff_prior_fights",
     "diff_age_years",
+    "diff_height_in",
     "diff_reach_in",
+    "diff_kd_per_min_l5",
+    "diff_non_sig_landed_per_min_l5",
+
+    # stance
+    "red_southpaw",
+    "blue_southpaw",
+    "is_opposite_stance",
 ]
 
 print("NaNs in FEATURE_COLS:\n", df[FEATURE_COLS].isna().sum().sort_values(ascending=False))
@@ -357,5 +383,381 @@ plt.title("Calibration Curve — Before vs After")
 plt.xlabel("Mean predicted probability")
 plt.ylabel("Fraction positive")
 plt.show()
+
+# %% [markdown]
+# ## Step 7: Cross-Validation
+# Use k-fold cross-validation to get more robust performance estimates.
+# A single train/test split can be noisy; CV gives confidence intervals.
+
+# %%
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+# Use only training data for CV (don't touch test set)
+X_cv = df.loc[train_mask, FEATURE_COLS].copy()
+y_cv = df.loc[train_mask, "red_win"].astype(int)
+
+# Fill missing values for CV
+X_cv = X_cv.fillna(X_cv.mean())
+
+cv_clf = Pipeline([
+    ("scaler", StandardScaler()),
+    ("lr", LogisticRegression(solver="liblinear", max_iter=1000))
+])
+
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+cv_acc = cross_val_score(cv_clf, X_cv, y_cv, cv=cv, scoring="accuracy")
+cv_logloss = cross_val_score(cv_clf, X_cv, y_cv, cv=cv, scoring="neg_log_loss")
+cv_roc = cross_val_score(cv_clf, X_cv, y_cv, cv=cv, scoring="roc_auc")
+
+print("5-Fold Cross-Validation Results (Training Data):")
+print(f"  Accuracy:  {cv_acc.mean():.4f} ± {cv_acc.std():.4f}")
+print(f"  LogLoss:   {-cv_logloss.mean():.4f} ± {cv_logloss.std():.4f}")
+print(f"  ROC AUC:   {cv_roc.mean():.4f} ± {cv_roc.std():.4f}")
+
+# %% [markdown]
+# ## Step 8: Confusion Matrix
+# Visualize where the model makes errors (false positives vs false negatives).
+
+# %%
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
+cm = confusion_matrix(y_test, pred_test)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Blue Win", "Red Win"])
+
+plt.figure(figsize=(8, 6))
+disp.plot(cmap="Blues", ax=plt.gca())
+plt.title("Confusion Matrix — Test Set")
+plt.show()
+
+print("\nConfusion Matrix Breakdown:")
+tn, fp, fn, tp = cm.ravel()
+print(f"  True Negatives (Blue predicted, Blue won):  {tn}")
+print(f"  False Positives (Red predicted, Blue won):  {fp}")
+print(f"  False Negatives (Blue predicted, Red won):  {fn}")
+print(f"  True Positives (Red predicted, Red won):    {tp}")
+print(f"\n  Precision (Red): {tp/(tp+fp):.4f}")
+print(f"  Recall (Red):    {tp/(tp+fn):.4f}")
+
+# %% [markdown]
+# ## Step 9: Baseline Comparisons
+# Compare model performance against simple baselines to understand if the model adds value.
+
+# %%
+from sklearn.dummy import DummyClassifier
+
+# Baseline 1: Random (50/50)
+dummy_random = DummyClassifier(strategy="uniform", random_state=42)
+dummy_random.fit(X_train, y_train)
+acc_random = accuracy_score(y_test, dummy_random.predict(X_test))
+ll_random = log_loss(y_test, dummy_random.predict_proba(X_test))
+
+# Baseline 2: Always predict majority class
+dummy_majority = DummyClassifier(strategy="most_frequent")
+dummy_majority.fit(X_train, y_train)
+acc_majority = accuracy_score(y_test, dummy_majority.predict(X_test))
+
+# Baseline 3: Experience-only (more prior fights = win)
+exp_pred = (df.loc[test_mask, "diff_prior_fights"] > 0).astype(int)
+acc_experience = accuracy_score(y_test, exp_pred)
+
+# Baseline 4: Stratified random (maintains class distribution)
+dummy_stratified = DummyClassifier(strategy="stratified", random_state=42)
+dummy_stratified.fit(X_train, y_train)
+acc_stratified = accuracy_score(y_test, dummy_stratified.predict(X_test))
+ll_stratified = log_loss(y_test, dummy_stratified.predict_proba(X_test))
+
+print("=" * 50)
+print("BASELINE COMPARISON")
+print("=" * 50)
+print(f"\n{'Model':<30} {'Accuracy':<12} {'LogLoss':<12}")
+print("-" * 50)
+print(f"{'Random (50/50)':<30} {acc_random:<12.4f} {ll_random:<12.4f}")
+print(f"{'Stratified Random':<30} {acc_stratified:<12.4f} {ll_stratified:<12.4f}")
+print(f"{'Always Majority (Blue)':<30} {acc_majority:<12.4f} {'N/A':<12}")
+print(f"{'Experience Only':<30} {acc_experience:<12.4f} {'N/A':<12}")
+print(f"{'Logistic Regression':<30} {acc_orig:<12.4f} {log_loss(y_test, p_test):<12.4f}")
+print("-" * 50)
+print(f"\nModel lift over random: +{(acc_orig - acc_random)*100:.2f}%")
+print(f"Model lift over stratified: +{(acc_orig - acc_stratified)*100:.2f}%")
+
+# %% [markdown]
+# ## Step 10: Feature Importance
+# Analyze which features drive predictions using logistic regression coefficients.
+
+# %%
+
+# Retrain model to get coefficients
+feat_clf = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler()),
+    ("lr", LogisticRegression(solver="liblinear", max_iter=1000))
+])
+feat_clf.fit(X_train, y_train)
+
+coefs = pd.DataFrame({
+    "feature": FEATURE_COLS,
+    "coefficient": feat_clf.named_steps["lr"].coef_[0],
+    "abs_coef": np.abs(feat_clf.named_steps["lr"].coef_[0])
+}).sort_values("abs_coef", ascending=False)
+
+print("\nFeature Importance (by absolute coefficient):")
+print(coefs.to_string(index=False))
+
+# Plot top 15 features
+plt.figure(figsize=(10, 8))
+top_n = 15
+top_coefs = coefs.head(top_n).sort_values("coefficient")
+colors = ["red" if c < 0 else "green" for c in top_coefs["coefficient"]]
+plt.barh(top_coefs["feature"], top_coefs["coefficient"], color=colors)
+plt.xlabel("Coefficient (green = favors red win, red = favors blue win)")
+plt.title(f"Top {top_n} Feature Importances")
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ## Step 11: Error Analysis by Segment
+# Analyze where the model performs well vs poorly.
+
+# %%
+
+# Add predictions to test dataframe
+df_test_analysis = df.loc[test_mask].copy()
+df_test_analysis["pred"] = pred_test
+df_test_analysis["correct"] = (df_test_analysis["pred"] == df_test_analysis["red_win"]).astype(int)
+df_test_analysis["prob"] = p_test
+
+# 11a: Accuracy by weight class
+print("\n" + "=" * 50)
+print("ACCURACY BY WEIGHT CLASS")
+print("=" * 50)
+
+wc_cols = [c for c in df.columns if c.startswith("wc_")]
+if wc_cols:
+    # Reconstruct weight class from one-hot columns
+    def get_weight_class(row):
+        for col in wc_cols:
+            if row.get(col, 0) == 1:
+                return col.replace("wc_", "")
+        return "Unknown"
+    df_test_analysis["weight_class"] = df_test_analysis.apply(get_weight_class, axis=1)
+else:
+    df_test_analysis["weight_class"] = "Unknown"
+
+wc_acc = df_test_analysis.groupby("weight_class").agg(
+    n_fights=("correct", "count"),
+    accuracy=("correct", "mean"),
+    avg_prob=("prob", "mean")
+).sort_values("n_fights", ascending=False)
+
+print(wc_acc.round(4))
+
+# 11b: Accuracy by experience level
+print("\n" + "=" * 50)
+print("ACCURACY BY MINIMUM EXPERIENCE")
+print("=" * 50)
+
+df_test_analysis["min_exp"] = np.minimum(
+    df_test_analysis["red_prior_fights"],
+    df_test_analysis["blue_prior_fights"]
+)
+df_test_analysis["exp_bucket"] = pd.cut(
+    df_test_analysis["min_exp"],
+    bins=[-1, 5, 10, 20, 50, 200],
+    labels=["0-5", "6-10", "11-20", "21-50", "50+"]
+)
+
+exp_acc = df_test_analysis.groupby("exp_bucket").agg(
+    n_fights=("correct", "count"),
+    accuracy=("correct", "mean"),
+    avg_prob=("prob", "mean")
+)
+print(exp_acc.round(4))
+
+# 11c: Accuracy by prediction confidence
+print("\n" + "=" * 50)
+print("ACCURACY BY MODEL CONFIDENCE")
+print("=" * 50)
+
+df_test_analysis["confidence"] = np.maximum(df_test_analysis["prob"], 1 - df_test_analysis["prob"])
+df_test_analysis["conf_bucket"] = pd.cut(
+    df_test_analysis["confidence"],
+    bins=[0.5, 0.55, 0.60, 0.65, 0.70, 1.0],
+    labels=["50-55%", "55-60%", "60-65%", "65-70%", "70%+"]
+)
+
+conf_acc = df_test_analysis.groupby("conf_bucket").agg(
+    n_fights=("correct", "count"),
+    accuracy=("correct", "mean"),
+    avg_confidence=("confidence", "mean")
+)
+print(conf_acc.round(4))
+
+# %% [markdown]
+# ## Step 12: Temporal Analysis
+# Check if model performance degrades over time (concept drift).
+
+# %%
+
+df_test_analysis["year"] = df_test_analysis["event_date"].dt.year
+df_test_analysis["year_month"] = df_test_analysis["event_date"].dt.to_period("M")
+
+# Accuracy by year
+print("\n" + "=" * 50)
+print("ACCURACY BY YEAR")
+print("=" * 50)
+
+year_acc = df_test_analysis.groupby("year").agg(
+    n_fights=("correct", "count"),
+    accuracy=("correct", "mean"),
+    avg_prob=("prob", "mean")
+)
+print(year_acc.round(4))
+
+# Plot accuracy over time
+plt.figure(figsize=(12, 5))
+
+# Rolling accuracy (30-fight window)
+df_sorted = df_test_analysis.sort_values("event_date")
+df_sorted["rolling_acc"] = df_sorted["correct"].rolling(window=50, min_periods=10).mean()
+
+plt.subplot(1, 2, 1)
+plt.plot(df_sorted["event_date"], df_sorted["rolling_acc"])
+plt.xlabel("Date")
+plt.ylabel("Rolling Accuracy (50-fight window)")
+plt.title("Model Accuracy Over Time")
+plt.axhline(y=0.5, color="red", linestyle="--", label="Random baseline")
+plt.legend()
+
+# Accuracy by year bar chart
+plt.subplot(1, 2, 2)
+year_acc["accuracy"].plot(kind="bar")
+plt.xlabel("Year")
+plt.ylabel("Accuracy")
+plt.title("Accuracy by Year")
+plt.axhline(y=0.5, color="red", linestyle="--")
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ## Step 13: ROI Simulation (Betting Analysis)
+# Simulate betting returns if we bet based on model predictions.
+# Assumes flat betting (same amount on each fight) with standard -110 odds.
+
+# %%
+
+def calculate_roi(predictions, actuals, odds=-110):
+    """
+    Calculate ROI for flat betting strategy.
+    odds: American odds (e.g., -110 means bet $110 to win $100)
+    """
+    if odds < 0:
+        profit_per_win = 100 / abs(odds)  # e.g., -110 -> 0.909
+        loss_per_loss = 1.0
+    else:
+        profit_per_win = odds / 100
+        loss_per_loss = 1.0
+
+    correct = (predictions == actuals)
+    total_profit = correct.sum() * profit_per_win - (~correct).sum() * loss_per_loss
+    total_wagered = len(predictions)
+    roi = total_profit / total_wagered * 100
+
+    return {
+        "n_bets": len(predictions),
+        "wins": correct.sum(),
+        "losses": (~correct).sum(),
+        "win_rate": correct.mean(),
+        "total_profit": total_profit,
+        "roi_pct": roi
+    }
+
+print("\n" + "=" * 50)
+print("ROI SIMULATION (Flat Betting, -110 Odds)")
+print("=" * 50)
+
+# Strategy 1: Bet on all predictions
+roi_all = calculate_roi(pred_test, y_test.values)
+print(f"\nStrategy 1: Bet on ALL fights")
+print(f"  Bets: {roi_all['n_bets']}, Wins: {roi_all['wins']}, Losses: {roi_all['losses']}")
+print(f"  Win Rate: {roi_all['win_rate']:.4f}")
+print(f"  Total Profit: {roi_all['total_profit']:.2f} units")
+print(f"  ROI: {roi_all['roi_pct']:.2f}%")
+
+# Strategy 2: Only bet when confidence > 55%
+high_conf_mask = df_test_analysis["confidence"] > 0.55
+if high_conf_mask.sum() > 0:
+    roi_high = calculate_roi(
+        pred_test[high_conf_mask.values],
+        y_test.values[high_conf_mask.values]
+    )
+    print(f"\nStrategy 2: Bet only when confidence > 55%")
+    print(f"  Bets: {roi_high['n_bets']}, Wins: {roi_high['wins']}, Losses: {roi_high['losses']}")
+    print(f"  Win Rate: {roi_high['win_rate']:.4f}")
+    print(f"  Total Profit: {roi_high['total_profit']:.2f} units")
+    print(f"  ROI: {roi_high['roi_pct']:.2f}%")
+
+# Strategy 3: Only bet when confidence > 60%
+very_high_conf_mask = df_test_analysis["confidence"] > 0.60
+if very_high_conf_mask.sum() > 0:
+    roi_very_high = calculate_roi(
+        pred_test[very_high_conf_mask.values],
+        y_test.values[very_high_conf_mask.values]
+    )
+    print(f"\nStrategy 3: Bet only when confidence > 60%")
+    print(f"  Bets: {roi_very_high['n_bets']}, Wins: {roi_very_high['wins']}, Losses: {roi_very_high['losses']}")
+    print(f"  Win Rate: {roi_very_high['win_rate']:.4f}")
+    print(f"  Total Profit: {roi_very_high['total_profit']:.2f} units")
+    print(f"  ROI: {roi_very_high['roi_pct']:.2f}%")
+
+# Break-even analysis
+print("\n" + "-" * 50)
+print("Note: At -110 odds, you need ~52.4% win rate to break even.")
+print(f"Current model win rate: {acc_orig*100:.1f}%")
+if acc_orig > 0.524:
+    print("Model IS profitable at standard odds (before vig considerations).")
+else:
+    print("Model is NOT profitable at standard odds.")
+
+# %% [markdown]
+# ## Step 14: Summary Statistics
+# Final summary of all evaluation metrics.
+
+# %%
+
+print("\n" + "=" * 60)
+print("FINAL MODEL EVALUATION SUMMARY")
+print("=" * 60)
+
+print("\n📊 DATASET")
+print(f"  Training fights: {train_mask.sum():,}")
+print(f"  Test fights: {test_mask.sum():,}")
+print(f"  Features: {len(FEATURE_COLS)}")
+
+print("\n📈 PERFORMANCE (Test Set)")
+print(f"  Accuracy: {acc_orig:.4f}")
+print(f"  LogLoss: {log_loss(y_test, p_test):.4f}")
+print(f"  Brier Score: {brier_score_loss(y_test, p_test):.4f}")
+print(f"  ROC AUC: {roc_auc_score(y_test, p_test):.4f}")
+
+print("\n📉 CROSS-VALIDATION (5-Fold)")
+print(f"  Accuracy: {cv_acc.mean():.4f} ± {cv_acc.std():.4f}")
+print(f"  ROC AUC: {cv_roc.mean():.4f} ± {cv_roc.std():.4f}")
+
+print("\n🎯 VS BASELINES")
+print(f"  vs Random: +{(acc_orig - acc_random)*100:.2f}%")
+print(f"  vs Experience-only: +{(acc_orig - acc_experience)*100:.2f}%")
+
+print("\n💰 BETTING ROI (-110 odds)")
+print(f"  All bets: {roi_all['roi_pct']:.2f}%")
+if high_conf_mask.sum() > 0:
+    print(f"  High confidence (>55%): {roi_high['roi_pct']:.2f}%")
+
+print("\n🔝 TOP 5 FEATURES")
+for i, row in coefs.head(5).iterrows():
+    direction = "→ Red" if row["coefficient"] > 0 else "→ Blue"
+    print(f"  {row['feature']}: {row['coefficient']:.4f} {direction}")
+
+print("\n" + "=" * 60)
 
 # %%
