@@ -23,7 +23,7 @@ def create_tables():
                        reach_in REAL,
                        weight_lbs REAL,
                        stance TEXT,
-                       dob TEXT,
+                       dob TEXT
                        )
                    """)
     
@@ -40,6 +40,7 @@ def create_tables():
                        method TEXT,
                        end_round INTEGER,
                        end_time_mmss TEXT,
+                       fight_seconds REAL,
                        winner_id TEXT
                        )
                    """)
