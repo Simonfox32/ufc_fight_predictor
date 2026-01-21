@@ -33,6 +33,9 @@ FEATURE_COLS = [
     "red_height_in", "blue_height_in",
     "red_reach_in", "blue_reach_in",
 
+    # days since last fight
+    "red_days_since_last_fight", "blue_days_since_last_fight",
+
     # differences
     "diff_prior_fights",
     "diff_sig_landed_per_min_l5",
@@ -44,7 +47,8 @@ FEATURE_COLS = [
     "diff_reach_in",
     "diff_kd_per_min_l5",
     "diff_non_sig_landed_per_min_l5",
-    
+    "diff_days_since_last_fight",
+
     'red_southpaw',
     'blue_southpaw',
     'is_opposite_stance',

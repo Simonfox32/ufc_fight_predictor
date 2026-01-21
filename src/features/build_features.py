@@ -52,13 +52,23 @@ def main():
         .apply(l5_mean_prior)
         .reset_index(level=0, drop=True)
     )
-    
+
+    # Days since last fight (shift to get previous fight date)
+    fight_agg_df['prev_fight_date'] = (
+        fight_agg_df.groupby('fighter_id')['event_date']
+        .shift(1)
+    )
+    fight_agg_df['days_since_last_fight'] = (
+        fight_agg_df['event_date'] - fight_agg_df['prev_fight_date']
+    ).dt.days
+
     features = [
     "fight_id",
     "fighter_id",
     "event_date",
     "kd_per_min_l5",
     "non_sig_landed_per_min_l5",
+    "days_since_last_fight",
     ]
     
     db = fight_agg_df[features]
@@ -66,19 +76,21 @@ def main():
     red_db = db.rename(columns=
                            {"fighter_id":"red_fighter_id",
                             "kd_per_min_l5":"red_kd_per_min_l5",
-                            "non_sig_landed_per_min_l5":"red_non_sig_landed_per_min_l5"})
-    
-    
+                            "non_sig_landed_per_min_l5":"red_non_sig_landed_per_min_l5",
+                            "days_since_last_fight":"red_days_since_last_fight"})
+
+
     blue_db = db.rename(columns=
                            {"fighter_id":"blue_fighter_id",
                             "kd_per_min_l5":"blue_kd_per_min_l5",
-                            "non_sig_landed_per_min_l5":"blue_non_sig_landed_per_min_l5"})
+                            "non_sig_landed_per_min_l5":"blue_non_sig_landed_per_min_l5",
+                            "days_since_last_fight":"blue_days_since_last_fight"})
     
-    v2b = v2a_df.merge(red_db[['fight_id', 'red_fighter_id', 'red_kd_per_min_l5', 'red_non_sig_landed_per_min_l5']],
+    v2b = v2a_df.merge(red_db[['fight_id', 'red_fighter_id', 'red_kd_per_min_l5', 'red_non_sig_landed_per_min_l5', 'red_days_since_last_fight']],
                        on=['fight_id', 'red_fighter_id'],
                        how='left')
-    
-    v2b = v2b.merge(blue_db[['fight_id', 'blue_fighter_id', 'blue_kd_per_min_l5', 'blue_non_sig_landed_per_min_l5']],
+
+    v2b = v2b.merge(blue_db[['fight_id', 'blue_fighter_id', 'blue_kd_per_min_l5', 'blue_non_sig_landed_per_min_l5', 'blue_days_since_last_fight']],
                        on=['fight_id', 'blue_fighter_id'],
                        how='left')
     
@@ -87,6 +99,11 @@ def main():
     v2b["diff_non_sig_landed_per_min_l5"] = (
         v2b["red_non_sig_landed_per_min_l5"]
         - v2b["blue_non_sig_landed_per_min_l5"]
+    )
+
+    v2b["diff_days_since_last_fight"] = (
+        v2b["red_days_since_last_fight"]
+        - v2b["blue_days_since_last_fight"]
     )
 
     v2b.to_csv(OUTPATH, index=False)
