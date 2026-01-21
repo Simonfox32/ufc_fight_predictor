@@ -28,5 +28,5 @@ data_processed/model_data/*.csv
 Thumbs.db
 nul
 
-# Claude Code
+
 CLAUDE.md
